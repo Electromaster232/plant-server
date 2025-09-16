@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>OnlyPlants</title>
+  <link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>OnlyPlants</h1>
+      <p class="sub">Literally water our plants for us</p>
+    </header>
+
+    <section class="card">
+      <h2>Switch Control</h2>
+      <div id="switch-info">
+        <div><strong>Name:</strong> <span id="entity-name">…</span></div>
+        <div><strong>Entity:</strong> <span id="entity-id">…</span></div>
+        <div><strong>State:</strong> <span id="entity-state" class="chip">unknown</span></div>
+      </div>
+      <button id="toggle-btn">Toggle</button>
+      <div id="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>Live Camera</h2>
+      <!-- mjpg-streamer is an MJPEG stream; <img> is perfect -->
+      <div class="video-wrap">
+        <img id="cam" alt="Live USB camera stream" />
+      </div>
+      <p class="muted">
+        If the image doesn’t load, confirm <code>mjpg-streamer</code> is running and the URL is reachable from this Pi.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const $name = byId("entity-name");
+    const $id = byId("entity-id");
+    const $state = byId("entity-state");
+    const $btn = byId("toggle-btn");
+    const $status = byId("status");
+    const $cam = byId("cam");
+
+    let CONFIG = { entityId: "", cameraMjpegUrl: "" };
+
+    async function loadConfig() {
+      const r = await fetch("/api/config");
+      if (!r.ok) throw new Error("Failed to load config");
+      CONFIG = await r.json();
+      $id.textContent = CONFIG.entityId;
+      $cam.src = CONFIG.cameraMjpegUrl;
+    }
+
+    async function loadState() {
+      const r = await fetch("/api/state");
+      if (!r.ok) throw new Error("Failed to fetch state");
+      const data = await r.json();
+      $name.textContent = data.name;
+      $id.textContent = data.entityId;
+      setStateChip(data.state);
+    }
+
+    function setStateChip(state) {
+      $state.textContent = state;
+      $state.classList.remove("on","off","unknown");
+      if (state === "on") $state.classList.add("on");
+      else if (state === "off") $state.classList.add("off");
+      else $state.classList.add("unknown");
+    }
+
+    async function toggle() {
+      $btn.disabled = true;
+      $status.textContent = "Toggling…";
+      try {
+        const r = await fetch("/api/toggle", { method: "POST" });
+        if (!r.ok) throw new Error("Toggle failed");
+        // small delay then refresh state
+        setTimeout(loadState, 400);
+        $status.textContent = "Toggled.";
+      } catch (e) {
+        console.error(e);
+        $status.textContent = "Error: " + e.message;
+      } finally {
+        $btn.disabled = false;
+      }
+    }
+
+    $btn.addEventListener("click", toggle);
+
+    // Boot
+    (async function () {
+      try {
+        await loadConfig();
+        await loadState();
+        // Poll the state every 3s so the UI stays in sync
+        setInterval(loadState, 3000);
+      } catch (e) {
+        console.error(e);
+        $status.textContent = "Startup error: " + e.message;
+      }
+    })();
+  </script>
+</body>
+</html>
